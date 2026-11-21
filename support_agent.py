@@ -13,6 +13,7 @@ Run CLI:    python support_agent.py
 
 import os
 import re
+import sys
 import time
 import operator
 import json
@@ -26,9 +27,14 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 load_dotenv()
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langchain_core.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -38,14 +44,23 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 
 # ── Environment setup ──────────────────────────────────────────────────────────
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = os.environ.get(
+    "OPENROUTER_MODEL",
+    "openai/gpt-4o-mini",
+)
+if not OPENROUTER_API_KEY:
     raise EnvironmentError(
-        "GOOGLE_API_KEY not set. Run: export GOOGLE_API_KEY='your-key-here'"
+        "OPENROUTER_API_KEY not set. Add it to .env."
     )
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-print("[System] Gemini 2.5 Flash initialized | temperature=0")
+llm = ChatOpenAI(
+    model=OPENROUTER_MODEL,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    temperature=0,
+)
+print(f"[System] OpenRouter model initialized: {OPENROUTER_MODEL} | temperature=0")
 
 # ── ReAct Constants (Session 3) ─────────────────────────────────────────────
 MAX_ITERATIONS    = 5
@@ -1969,7 +1984,7 @@ def respond_node(state: SharedState) -> dict:
     for msg in reversed(messages):
         if isinstance(msg, AIMessage) and msg.content:
             content = msg.content
-            # Gemini may return a list of content blocks; extract text
+            # Some providers may return a list of content blocks; extract text
             if isinstance(content, list):
                 parts = []
                 for block in content:
@@ -2021,7 +2036,7 @@ def summarization_node(state: SharedState) -> dict:
     print(f"[Summarize] Triggered — {len(messages)} messages → compressing")
 
     # Filter to only Human/AI content messages — no tool_calls or ToolMessages.
-    # Gemini rejects sequences with orphaned function-call turns.
+    # Providers reject sequences with orphaned function-call turns.
     msgs_for_summary = []
     for m in messages:
         if isinstance(m, HumanMessage) and m.content:
@@ -2038,7 +2053,7 @@ def summarization_node(state: SharedState) -> dict:
             *msgs_for_summary
         ])
         summary = _extract_text(response.content).strip()
-        # Strip Gemini 2.5 Flash thinking tokens if present in content
+        # Strip provider thinking tokens if present in content
         import re as _re
         summary = _re.sub(r'<thinking>.*?</thinking>', '', summary,
                           flags=_re.DOTALL | _re.IGNORECASE).strip()
@@ -2051,7 +2066,7 @@ def summarization_node(state: SharedState) -> dict:
         return {}
 
     # Keep last 4 messages but always start at a HumanMessage boundary
-    # so we never hand Gemini an orphaned AIMessage(tool_calls) first.
+    # so we never hand the model an orphaned AIMessage(tool_calls) first.
     keep_n = 4
     while keep_n <= len(messages):
         if isinstance(messages[-keep_n], HumanMessage):

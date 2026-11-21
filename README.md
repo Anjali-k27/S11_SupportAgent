@@ -44,7 +44,8 @@ python -m spacy download en_core_web_lg
 
 Create a `.env` file in the project root:
 ```
-GOOGLE_API_KEY=your-gemini-api-key-here
+OPENROUTER_API_KEY=your-openrouter-api-key-here
+OPENROUTER_MODEL=openai/gpt-4o-mini
 ```
 
 For real GitHub issue creation (optional — system works in mock mode without these):
@@ -53,7 +54,7 @@ GITHUB_TOKEN=ghp_your_personal_access_token
 GITHUB_REPO=your-org/your-repo
 ```
 
-Get a Gemini key at: https://aistudio.google.com/app/apikey  
+Get an OpenRouter key at: https://openrouter.ai/keys
 Generate a GitHub token: Settings → Developer settings → Personal access tokens → scope: `repo`
 
 ---
@@ -86,7 +87,7 @@ Every ticket enters `ingress_node` first.
 
 ### Step 2: Classification
 
-`classify_node` sends the sanitized text to Gemini and categorizes it as one of: `technical`, `billing`, `fraud`, or `general`.
+`classify_node` sends the sanitized text to the configured OpenRouter model and categorizes it as one of: `technical`, `billing`, `fraud`, or `general`.
 
 - **technical / fraud / multi-issue** → `dispatcher` (parallel path)
 - **billing / general** → `supervisor` (hub-and-spoke orchestrator path)
@@ -133,7 +134,7 @@ The UI detects `interrupted: true` in the `/api/run` response and shows the **Hu
 `synthesizer` waits for all parallel agents (and `github_tool_node`) to complete, then:
 
 - Filters `internal_notes` to relevant findings (severity ≠ none)
-- Generates a single coherent customer-facing response via Gemini
+- Generates a single coherent customer-facing response via the configured OpenRouter model
 - Includes the GitHub issue URL if one was created
 
 ### Step 7b: Supervisor path (billing / general)
